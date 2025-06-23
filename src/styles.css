@@ -1,0 +1,120 @@
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    @media (prefers-color-scheme: dark) {
+        body {
+            background-color: #181a1b;
+            color: #e3e6eb;
+        }
+
+        #info-panel {
+            background: #23272a;
+            color: #e3e6eb;
+            border-bottom: 1px solid #222;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        .control-group label {
+            color: #bfc7d5;
+        }
+
+        #animation-controls button {
+            background-color: #2563eb;
+            color: #f3f6fa;
+        }
+    }
+    /* Prevent scrollbars */
+}
+
+#info-panel {
+    background: white;
+    padding: 1.5rem;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+}
+
+h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.5rem;
+}
+
+p {
+    margin: 0 0 1rem 0;
+    max-width: 800px;
+}
+
+#controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.control-group label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #555;
+}
+
+#animation-controls button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+}
+
+#animation-controls button:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+
+#animation-controls button:disabled {
+    background-color: #a0c7e4;
+    cursor: not-allowed;
+}
+
+#visibility-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.checkbox-container input {
+    width: 18px;
+    height: 18px;
+}
+
+#canvas-container {
+    flex-grow: 1;
+    position: relative;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+} 
