@@ -7,10 +7,11 @@ const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf0f2f5);
 const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
-camera.position.set(25, 20, 35);
+camera.position.set(0, 50, 0);
 const renderer = new THREE.WebGLRenderer({
     antialias: true
 });
+
 renderer.setSize(container.clientWidth, container.clientHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
@@ -20,9 +21,45 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.minDistance = 10;
+controls.minDistance = 1;
 controls.maxDistance = 150;
 controls.maxPolarAngle = Math.PI / 1.5;
+
+// --- PERSIST CAMERA STATE ---
+function saveCameraState() {
+    localStorage.setItem('cameraPosition', JSON.stringify(camera.position));
+    localStorage.setItem('cameraRotation', JSON.stringify(camera.rotation));
+    localStorage.setItem('cameraZoom', camera.zoom.toString());
+    localStorage.setItem('controlsTarget', JSON.stringify(controls.target));
+}
+
+function loadCameraState() {
+    const position = JSON.parse(localStorage.getItem('cameraPosition'));
+    if (position) {
+        camera.position.copy(position);
+    }
+
+    const rotation = JSON.parse(localStorage.getItem('cameraRotation'));
+    if (rotation) {
+        camera.rotation.set(rotation._x, rotation._y, rotation._z, rotation._order);
+    }
+    
+    const zoom = localStorage.getItem('cameraZoom');
+    if (zoom) {
+        camera.zoom = parseFloat(zoom);
+        camera.updateProjectionMatrix();
+    }
+
+    const target = JSON.parse(localStorage.getItem('controlsTarget'));
+    if (target) {
+        controls.target.copy(target);
+    }
+
+    controls.update();
+}
+
+controls.addEventListener('end', saveCameraState);
+loadCameraState();
 
 // --- LIGHTING ---
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -39,9 +76,9 @@ scene.add(directionalLight2);
 
 // --- MATERIALS ---
 const materials = {
-    base: new THREE.MeshStandardMaterial({ color: 0xf2f2f2, name: 'Cassette Base' }),
+    base: new THREE.MeshStandardMaterial({ color: 0xff88888, name: 'Cassette Base' }),
     chip: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, name: 'Microchip' }),
-    needle: new THREE.MeshStandardMaterial({ color: 0xff4136, name: 'Needle/Port' }),
+    needle: new THREE.MeshStandardMaterial({ color: 0xffff36, name: 'Needle/Port' }),
     slider: new THREE.MeshStandardMaterial({ color: 0x0077ff, name: 'Sliding Track' }), 
     cap: new THREE.MeshStandardMaterial({ color: 0xffdc00, name: 'Top Cap' })
 };
@@ -79,7 +116,7 @@ platformFloor.position.y = chipPlatformHeight / 2;
 platformFloor.receiveShadow = true;
 platformWithRecess.add(platformFloor);
 
-const wallHeight = 1;
+const wallHeight = chipHeight;
 const wallYPos = chipPlatformHeight + (wallHeight / 2);
 const wallThickness = 1.0;
 
@@ -100,7 +137,6 @@ function createEndWall() {
     const cradleClearanceWidth = 4.0; 
     const endSegmentLength = (totalWallWidth - cradleClearanceWidth) / 2;
     const endSegmentGeo = new THREE.BoxGeometry(wallThickness, wallHeight, endSegmentLength);
-    
     const segment1 = new THREE.Mesh(endSegmentGeo, materials.base);
     segment1.position.z = -(cradleClearanceWidth / 2) - (endSegmentLength / 2);
     segment1.receiveShadow = true;
@@ -114,13 +150,8 @@ function createEndWall() {
 const xPos = (chipLength / 2) + (wallThickness / 2);
 const endWall1 = createEndWall();
 endWall1.position.set(xPos, wallYPos, 0);
-endWall1.scale.set(1, 2, 1);
-endWall1.position.y = chipPlatformHeight;
 const endWall2 = createEndWall();
 endWall2.position.set(-xPos, wallYPos, 0);
-endWall2.scale.set(1, 2, 1);
-endWall2.position.y = chipPlatformHeight;
-
 platformWithRecess.add(endWall1, endWall2);
 
 baseGroup.add(platformWithRecess);
@@ -159,13 +190,13 @@ const mainChipShape = new THREE.Shape();
 const halfLength = chipLength / 2;
 const halfWidth = chipWidth / 2;
 
-// Define port dimensions from schematics. User has adjusted portFunnelDepth.
-const portFunnelDepth = 0.1; 
-const portThroatHalfWidth = 0.4 / 2;
-const portOpeningHalfWidth = 1 / 2;
+// Define port dimensions from schematics. User has adjusted portFunnelDepth. !!!!!
+const portFunnelDepth = 0; 
+const portThroatHalfWidth = 0.45 / 2;
+const portOpeningHalfWidth = 0.45 / 2;
 
 // Define the X coordinates for the port indentations
-const portInnerX = halfLength - 0.1;
+const portInnerX = halfLength;
 
 // Start drawing the 2D profile from the bottom-left corner
 mainChipShape.moveTo(-halfLength, -halfWidth);
@@ -310,7 +341,7 @@ function createSliderAssembly(isFlipped) {
     const sliderGroup = new THREE.Group();
     sliderGroup.name = isFlipped ? "Slider Cart (L)" : "Slider Cart (R)";
 
-    const sliderBaseHeight = 1;
+    const sliderBaseHeight = 1.3;
     const sliderYPos = railTopY + sliderBaseHeight / 2;
     const cradleWidth = 1.0;
     const cradleLocalX = 0;
@@ -337,7 +368,7 @@ function createSliderAssembly(isFlipped) {
     sliderGroup.add(hook1_stem, hook1_foot, hook2_stem, hook2_foot);
 
     // The cradle is the origin of the slider group
-    const cradleHeight = needleAlignmentY - railTopY + 0.5;
+    const cradleHeight = needleAlignmentY + sliderBaseHeight / 2;
     const cradle = new THREE.Mesh(new THREE.BoxGeometry(cradleWidth, cradleHeight, 4), materials.slider);
     cradle.position.set(cradleLocalX, railTopY + cradleHeight / 2, 0);
     cradle.castShadow = true;
@@ -385,7 +416,7 @@ componentGroup.add(sliderRight, sliderLeft);
 const cap = new THREE.Mesh(new THREE.BoxGeometry(baseLength + 2, 2, chipWidth + 4), materials.cap);
 cap.castShadow = true;
 cap.name = "Top Cap";
-componentGroup.add(cap);
+// componentGroup.add(cap);
 
 // --- FINALIZED POSITIONS & STATES ---
 const chipEdgeX = chipLength / 2; // 13.25
@@ -444,6 +475,9 @@ Object.keys(components).forEach(name => {
     div.appendChild(label);
     visibilityControlsContainer.appendChild(div);
 });
+
+// TEMPORARY: Hide the top cap
+document.getElementById('check-Top-Cap').checked = false;
 
 let activeAnimations = 0;
 const animationButtons = document.querySelectorAll('#animation-controls button');
