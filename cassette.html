@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Microchip Cassette Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            /* Prevent scrollbars */
+        }
+
+        #info-panel {
+            background: white;
+            padding: 1.5rem;
+            border-bottom: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.5rem;
+        }
+
+        p {
+            margin: 0 0 1rem 0;
+            max-width: 800px;
+        }
+
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-group label {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        #animation-controls button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+
+        #animation-controls button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        #animation-controls button:disabled {
+            background-color: #a0c7e4;
+            cursor: not-allowed;
+        }
+
+        #visibility-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-container input {
+            width: 18px;
+            height: 18px;
+        }
+
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <div id="info-panel">
+        <h1>Microchip Cassette 3D Model</h1>
+        <p>This redesigned version uses exact chip dimensions and features a collision-free slider cart for a precise,
+            flush insertion.</p>
+        <div id="controls">
+            <div class="control-group">
+                <label>Animation Controls</label>
+                <div id="animation-controls">
+                    <button id="reset-btn">Reset</button>
+                    <button id="slide-lock-btn">Insert Needles</button>
+                    <button id="assemble-btn">Add Top Cap</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label>Component Visibility</label>
+                <div id="visibility-controls">
+                    <!-- Checkboxes will be dynamically added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <!-- The 3D scene will be rendered here -->
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- BASIC SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f2f5);
+        const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(25, 20, 35);
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true
+        });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // --- CONTROLS ---
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 10;
+        controls.maxDistance = 150;
+        controls.maxPolarAngle = Math.PI / 1.5;
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        directionalLight.position.set(-15, 25, 20);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight2.position.set(15, 10, -20);
+        scene.add(directionalLight2);
+
+        // --- MATERIALS ---
+        const materials = {
+            base: new THREE.MeshStandardMaterial({ color: 0x0077ff, name: 'Cassette Base' }),
+            chip: new THREE.MeshStandardMaterial({ color: 0x222222, name: 'Microchip' }),
+            needle: new THREE.MeshStandardMaterial({ color: 0xff4136, name: 'Needle/Port' }),
+            slider: new THREE.MeshStandardMaterial({ color: 0x2ecc40, name: 'Sliding Track' }),
+            cap: new THREE.MeshStandardMaterial({ color: 0xffdc00, name: 'Top Cap' })
+        };
+
+        // --- GEOMETRY & MESH CREATION ---
+        const componentGroup = new THREE.Group();
+        scene.add(componentGroup);
+
+        // NEW: Exact chip dimensions from schematics
+        const chipLength = 26.5;
+        const chipWidth = 10.409;
+        const chipHeight = 1.325;
+
+        const baseLength = chipLength + 18; // Base is chip length + clearance for sliders
+        const chipPlatformHeight = 2.5,
+            baseWallHeight = 4.1,
+            railTopY = 0.5;
+
+        // 1. Cassette Base with T-Slot Grooves
+        const baseGroup = new THREE.Group();
+        const mainFloor = new THREE.Mesh(new THREE.BoxGeometry(baseLength, 0.2, chipWidth + 2), materials.base);
+        mainFloor.position.y = -0.1;
+        mainFloor.receiveShadow = true;
+        baseGroup.add(mainFloor);
+
+        // --- Create the FINAL platform with a recess and correct cutouts ---
+        const platformWithRecess = new THREE.Group();
+
+        // The platform floor, wider to close gaps
+        const platformFloor = new THREE.Mesh(
+            new THREE.BoxGeometry(chipLength, chipPlatformHeight, chipWidth + 2),
+            materials.base
+        );
+        platformFloor.position.y = chipPlatformHeight / 2;
+        platformFloor.receiveShadow = true;
+        platformWithRecess.add(platformFloor);
+
+        const wallHeight = 1;
+        const wallYPos = chipPlatformHeight + (wallHeight / 2);
+        const wallThickness = 1.0;
+
+        // 1. Add the full-length SOLID side walls
+        const sideWallGeo = new THREE.BoxGeometry(chipLength, wallHeight, wallThickness);
+        const leftWall = new THREE.Mesh(sideWallGeo, materials.base);
+        leftWall.position.set(0, wallYPos, -(chipWidth / 2) - (wallThickness / 2));
+        leftWall.receiveShadow = true;
+        const rightWall = new THREE.Mesh(sideWallGeo, materials.base);
+        rightWall.position.set(0, wallYPos, (chipWidth / 2) + (wallThickness / 2));
+        rightWall.receiveShadow = true;
+        platformWithRecess.add(leftWall, rightWall);
+
+        // 2. Create the notched END walls for cradle clearance
+        function createEndWall() {
+            const wallGroup = new THREE.Group();
+            const totalWallWidth = chipWidth + (2 * wallThickness);
+            const cradleClearanceWidth = 4.0; 
+            const endSegmentLength = (totalWallWidth - cradleClearanceWidth) / 2;
+            const endSegmentGeo = new THREE.BoxGeometry(wallThickness, wallHeight, endSegmentLength);
+            
+            const segment1 = new THREE.Mesh(endSegmentGeo, materials.base);
+            segment1.position.z = -(cradleClearanceWidth / 2) - (endSegmentLength / 2);
+            segment1.receiveShadow = true;
+            const segment2 = new THREE.Mesh(endSegmentGeo, materials.base);
+            segment2.position.z = (cradleClearanceWidth / 2) + (endSegmentLength / 2);
+            segment2.receiveShadow = true;
+            wallGroup.add(segment1, segment2);
+            return wallGroup;
+        }
+
+        const xPos = (chipLength / 2) + (wallThickness / 2);
+        const endWall1 = createEndWall();
+        endWall1.position.set(xPos, wallYPos, 0);
+        endWall1.scale.set(1, 2, 1);
+        endWall1.position.y = chipPlatformHeight;
+        const endWall2 = createEndWall();
+        endWall2.position.set(-xPos, wallYPos, 0);
+        endWall2.scale.set(1, 2, 1);
+        endWall2.position.y = chipPlatformHeight;
+
+        platformWithRecess.add(endWall1, endWall2);
+
+        baseGroup.add(platformWithRecess);
+        
+        const outerWallLeft = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
+        outerWallLeft.position.set(0, (baseWallHeight / 2) - 0.2, (chipWidth / 2) + 1.5);
+        outerWallLeft.receiveShadow = true;
+        baseGroup.add(outerWallLeft);
+        const outerWallRight = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
+        outerWallRight.position.set(0, (baseWallHeight / 2) - 0.2, -(chipWidth / 2) - 1.5);
+        outerWallRight.receiveShadow = true;
+        baseGroup.add(outerWallRight);
+
+        function createTSlotRail(x, z) {
+            const tSlotGroup = new THREE.Group();
+            const stem = new THREE.Mesh(new THREE.BoxGeometry(baseLength, railTopY, 0.5), materials.base);
+            stem.position.set(x, railTopY / 2, z);
+            stem.receiveShadow = true;
+            const top = new THREE.Mesh(new THREE.BoxGeometry(baseLength, 0.2, 1.5), materials.base);
+            top.position.set(x, railTopY - 0.1, z);
+            top.receiveShadow = true;
+            tSlotGroup.add(stem, top);
+            return tSlotGroup;
+        }
+        baseGroup.add(createTSlotRail(0, -4.5), createTSlotRail(0, -2.5), createTSlotRail(0, 2.5), createTSlotRail(0, 4.5));
+        baseGroup.name = "Cassette Base";
+        componentGroup.add(baseGroup);
+
+        // 2. Microchip (with exact dimensions)
+        const chipGroup = new THREE.Group();
+        const mainChipBody = new THREE.Mesh(new THREE.BoxGeometry(chipLength, chipHeight, chipWidth), materials.chip);
+        mainChipBody.castShadow = true;
+        chipGroup.add(mainChipBody);
+        chipGroup.position.y = chipPlatformHeight + (chipHeight / 2);
+        chipGroup.name = "Microchip";
+        componentGroup.add(chipGroup);
+
+        const needleAlignmentY = chipGroup.position.y;
+
+        // --- RE-ENGINEERED SLIDER ASSEMBLY FUNCTION ---
+        function createSliderAssembly(isFlipped) {
+            const sliderGroup = new THREE.Group();
+            sliderGroup.name = isFlipped ? "Slider Cart (L)" : "Slider Cart (R)";
+
+            const sliderBaseHeight = 1;
+            const sliderYPos = railTopY + sliderBaseHeight / 2;
+            const cradleWidth = 1.0;
+            const cradleLocalX = 0;
+
+            // Main body is now defined and positioned relative to the front cradle
+            const mainBodyWidth = 5;
+            const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainBodyWidth, sliderBaseHeight, chipWidth + 2), materials.slider);
+            mainBody.position.y = sliderYPos;
+            mainBody.position.x = cradleLocalX + cradleWidth / 2 + mainBodyWidth / 2;
+            mainBody.castShadow = true;
+            sliderGroup.add(mainBody);
+
+            // T-slot hooks are attached to the main body
+            const hookStemGeo = new THREE.BoxGeometry(mainBodyWidth, 0.4, 0.5);
+            const hookFootGeo = new THREE.BoxGeometry(mainBodyWidth, 0.4, 1.5);
+            const hook1_stem = new THREE.Mesh(hookStemGeo, materials.slider);
+            hook1_stem.position.set(mainBody.position.x, sliderYPos - (sliderBaseHeight / 2) - 0.2, -3.5);
+            const hook1_foot = new THREE.Mesh(hookFootGeo, materials.slider);
+            hook1_foot.position.set(mainBody.position.x, sliderYPos - (sliderBaseHeight / 2) - 0.4, -3.5);
+            const hook2_stem = new THREE.Mesh(hookStemGeo, materials.slider);
+            hook2_stem.position.set(mainBody.position.x, sliderYPos - (sliderBaseHeight / 2) - 0.2, 3.5);
+            const hook2_foot = new THREE.Mesh(hookFootGeo, materials.slider);
+            hook2_foot.position.set(mainBody.position.x, sliderYPos - (sliderBaseHeight / 2) - 0.4, 3.5);
+            sliderGroup.add(hook1_stem, hook1_foot, hook2_stem, hook2_foot);
+
+            // The cradle is the origin of the slider group
+            const cradleHeight = needleAlignmentY - railTopY + 0.5;
+            const cradle = new THREE.Mesh(new THREE.BoxGeometry(cradleWidth, cradleHeight, 4), materials.slider);
+            cradle.position.set(cradleLocalX, railTopY + cradleHeight / 2, 0);
+            cradle.castShadow = true;
+            sliderGroup.add(cradle);
+
+            const needleAssembly = new THREE.Group();
+            needleAssembly.name = "Needle Assembly";
+            needleAssembly.castShadow = true;
+            needleAssembly.position.set(cradleLocalX, needleAlignmentY, 0);
+
+            const needleShaftLength = 3.0;
+            const needleShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2065, 0.2065, needleShaftLength, 16), materials.needle);
+            needleShaft.rotation.z = Math.PI / 2;
+            needleShaft.position.x = -(needleShaftLength / 2);
+            needleAssembly.add(needleShaft);
+
+            const luerPortGroup = new THREE.Group();
+            luerPortGroup.position.x = cradleWidth / 2;
+            const portFlange = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.5, 32), materials.needle);
+            portFlange.rotation.z = Math.PI / 2;
+            portFlange.position.x = 0.25;
+            luerPortGroup.add(portFlange);
+            const mainPort = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2, 32), materials.needle);
+            mainPort.rotation.z = Math.PI / 2;
+            mainPort.position.x = 1.5;
+            luerPortGroup.add(mainPort);
+            const portHole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2.05, 32), new THREE.MeshBasicMaterial({ color: 0x992211 }));
+            portHole.rotation.z = Math.PI / 2;
+            portHole.position.x = 1.5;
+            luerPortGroup.add(portHole);
+
+            needleAssembly.add(luerPortGroup);
+            sliderGroup.add(needleAssembly);
+
+            if (isFlipped) {
+                sliderGroup.rotation.y = Math.PI;
+            }
+            return sliderGroup;
+        }
+
+        const sliderRight = createSliderAssembly(false);
+        const sliderLeft = createSliderAssembly(true);
+        componentGroup.add(sliderRight, sliderLeft);
+
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(baseLength + 2, 2, chipWidth + 4), materials.cap);
+        cap.castShadow = true;
+        cap.name = "Top Cap";
+        componentGroup.add(cap);
+
+        // --- FINALIZED POSITIONS & STATES ---
+        const chipEdgeX = chipLength / 2; // 13.25
+        const cradleFrontFaceLocalX = -0.5; // Front face of cradle (width=1) relative to slider origin (x=0)
+
+        // Final position: Front face of cradle must be flush with chip face.
+        const targetSliderX = chipEdgeX - cradleFrontFaceLocalX; // 13.25 - (-0.5) = 13.75
+
+        // Initial Position: Needle tip must be clear of chip face with 1mm clearance
+        const needleTipLocalX = cradleFrontFaceLocalX - 3.5; // -0.5 - 3.5 = -4.0
+        const initialSliderX = chipEdgeX - needleTipLocalX + 1.0; // 13.25 - (-4.0) + 1.0 = 18.25
+
+        const initialPositions = {
+            sliderRight: new THREE.Vector3(initialSliderX, 0, 0),
+            sliderLeft: new THREE.Vector3(-initialSliderX, 0, 0),
+            cap: new THREE.Vector3(0, 20, 0)
+        };
+
+        const targetPositions = {
+            sliderRight: new THREE.Vector3(targetSliderX, 0, 0),
+            sliderLeft: new THREE.Vector3(-targetSliderX, 0, 0),
+            cap: new THREE.Vector3(0, baseWallHeight + 1, 0)
+        };
+
+
+        function resetToInitialState() {
+            sliderRight.position.copy(initialPositions.sliderRight);
+            sliderLeft.position.copy(initialPositions.sliderLeft);
+            cap.position.copy(initialPositions.cap);
+            cap.visible = true;
+        }
+        resetToInitialState();
+
+        const visibilityControlsContainer = document.getElementById('visibility-controls');
+        const components = {
+            "Base": baseGroup,
+            "Chip": chipGroup,
+            "Slider Cart (R)": sliderRight,
+            "Slider Cart (L)": sliderLeft,
+            "Top Cap": cap
+        };
+        Object.keys(components).forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'checkbox-container';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `check-${name.replace(/\s+/g, '-')}`;
+            checkbox.checked = true;
+            checkbox.addEventListener('change', (event) => {
+                components[name].visible = event.target.checked;
+            });
+            const label = document.createElement('label');
+            label.htmlFor = checkbox.id;
+            label.textContent = name;
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            visibilityControlsContainer.appendChild(div);
+        });
+
+        let activeAnimations = 0;
+        const animationButtons = document.querySelectorAll('#animation-controls button');
+        const secureNeedlesBtn = document.getElementById('secure-needles-btn');
+        if (secureNeedlesBtn) {
+            secureNeedlesBtn.parentNode.removeChild(secureNeedlesBtn);
+        }
+
+        function setButtonsDisabled(disabled) {
+            document.querySelectorAll('#animation-controls button').forEach(button => button.disabled = disabled);
+        }
+
+        function animate(object, target, duration, property) {
+            activeAnimations++;
+            setButtonsDisabled(true);
+            const start = object[property].clone();
+            let startTime = null;
+
+            function animationStep(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const progress = Math.min((timestamp - startTime) / duration, 1);
+                const easeOutProgress = 1 - Math.pow(1 - progress, 4);
+
+                if (property === 'position') {
+                    object.position.lerpVectors(start, target, easeOutProgress);
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(animationStep);
+                } else {
+                    activeAnimations--;
+                    if (activeAnimations === 0) {
+                        setButtonsDisabled(false);
+                    }
+                }
+            }
+            requestAnimationFrame(animationStep);
+        }
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (activeAnimations === 0) resetToInitialState();
+        });
+        document.getElementById('slide-lock-btn').addEventListener('click', () => {
+            animate(sliderRight, targetPositions.sliderRight, 1000, 'position');
+            animate(sliderLeft, targetPositions.sliderLeft, 1000, 'position');
+        });
+        document.getElementById('assemble-btn').addEventListener('click', () => {
+            animate(cap, targetPositions.cap, 1000, 'position');
+        });
+
+        function animateLoop() {
+            requestAnimationFrame(animateLoop);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        window.addEventListener('resize', onWindowResize);
+        animateLoop();
+    </script>
+</body>
+
+</html>
