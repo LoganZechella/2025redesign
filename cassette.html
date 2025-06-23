@@ -138,8 +138,9 @@
         <!-- The 3D scene will be rendered here -->
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r148/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.148.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three-csg-ts@3.1.12/dist/index.js"></script>
 
     <script>
         // --- BASIC SETUP ---
@@ -291,9 +292,100 @@
 
         // 2. Microchip (with exact dimensions)
         const chipGroup = new THREE.Group();
-        const mainChipBody = new THREE.Mesh(new THREE.BoxGeometry(chipLength, chipHeight, chipWidth), materials.chip);
-        mainChipBody.castShadow = true;
-        chipGroup.add(mainChipBody);
+        
+        // --- Create a new, dimensionally-accurate chip body with integrated ports ---
+        
+        const chipShape = new THREE.Shape();
+        
+        // Use half dimensions for easier drawing from the center
+        const halfLength = chipLength / 2;
+        const halfWidth = chipWidth / 2;
+        
+        // Define port dimensions from schematics
+        const portFunnelDepth = 2.197;
+        const portThroatHalfWidth = 0.4 / 2;
+        const portOpeningHalfWidth = 1.471 / 2;
+        
+        // Start drawing the 2D profile from the bottom-left corner
+        chipShape.moveTo(-halfLength, -halfWidth);
+        chipShape.lineTo(halfLength, -halfWidth); // Bottom edge
+        
+        // Draw the right-side port cutout
+        chipShape.lineTo(halfLength, -portOpeningHalfWidth);
+        chipShape.lineTo(halfLength - portFunnelDepth, -portThroatHalfWidth);
+        chipShape.lineTo(halfLength - portFunnelDepth, portThroatHalfWidth);
+        chipShape.lineTo(halfLength, portOpeningHalfWidth);
+        
+        chipShape.lineTo(halfLength, halfWidth); // Top-right corner
+        chipShape.lineTo(-halfLength, halfWidth); // Top edge
+        
+        // Draw the left-side port cutout
+        chipShape.lineTo(-halfLength, portOpeningHalfWidth);
+        chipShape.lineTo(-halfLength + portFunnelDepth, portThroatHalfWidth);
+        chipShape.lineTo(-halfLength + portFunnelDepth, -portThroatHalfWidth);
+        chipShape.lineTo(-halfLength, -portOpeningHalfWidth);
+        
+        chipShape.closePath(); // Close the shape back to the start
+        
+        const extrudeSettings = {
+            steps: 2,
+            depth: chipHeight,
+            bevelEnabled: true,
+            bevelThickness: 0.05,
+            bevelSize: 0.05,
+            bevelSegments: 2
+        };
+        
+        const chipGeometry = new THREE.ExtrudeGeometry(chipShape, extrudeSettings);
+        chipGeometry.rotateX(-Math.PI / 2); // Lay flat on XZ plane
+        chipGeometry.translate(0, -chipHeight / 2, 0); // Center vertically
+        
+        const newMainChipBody = new THREE.Mesh(chipGeometry, materials.chip);
+        newMainChipBody.castShadow = true;
+
+        // --- Create the dimensionally-accurate longitudinal bottom channel for CSG ---
+        const channelShape = new THREE.Shape();
+        const lowerWidth = 1.4;
+        const upperWidth = 0.4;
+        const lowerHeight = 0.3125;
+        const upperTotalHeight = 0.5875;
+
+        // Define the "keyhole" cross-section from the schematics
+        channelShape.moveTo(-lowerWidth / 2, 0);
+        channelShape.lineTo(-lowerWidth / 2, lowerHeight);
+        channelShape.lineTo(-upperWidth / 2, lowerHeight);
+        channelShape.lineTo(-upperWidth / 2, upperTotalHeight);
+        channelShape.lineTo(upperWidth / 2, upperTotalHeight);
+        channelShape.lineTo(upperWidth / 2, lowerHeight);
+        channelShape.lineTo(lowerWidth / 2, lowerHeight);
+        channelShape.lineTo(lowerWidth / 2, 0);
+        channelShape.closePath();
+
+        const channelExtrudeSettings = {
+            steps: 1,
+            depth: chipLength,
+            bevelEnabled: false
+        };
+        const channelGeometry = new THREE.ExtrudeGeometry(channelShape, channelExtrudeSettings);
+        const channelMeshForCSG = new THREE.Mesh(channelGeometry);
+
+        // Position the channel volume for subtraction
+        channelGeometry.translate(0, 0, -chipLength / 2);
+        channelMeshForCSG.rotation.y = -Math.PI / 2;
+        channelMeshForCSG.position.y = -chipHeight / 2;
+
+        // --- Perform CSG Subtraction ---
+        newMainChipBody.updateMatrix();
+        channelMeshForCSG.updateMatrix();
+
+        const finalChip = CSG.toMesh(
+            CSG.fromMesh(newMainChipBody).subtract(CSG.fromMesh(channelMeshForCSG)),
+            newMainChipBody.matrix
+        );
+        finalChip.material = materials.chip;
+        finalChip.castShadow = true;
+        chipGroup.add(finalChip);
+
         chipGroup.position.y = chipPlatformHeight + (chipHeight / 2);
         chipGroup.name = "Microchip";
         componentGroup.add(chipGroup);
@@ -312,9 +404,9 @@
 
             // Main body is now defined and positioned relative to the front cradle
             const mainBodyWidth = 5;
-            const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainBodyWidth, sliderBaseHeight, chipWidth + 2), materials.slider);
+            const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainBodyWidth + 1, sliderBaseHeight, chipWidth + 2), materials.slider);
             mainBody.position.y = sliderYPos;
-            mainBody.position.x = cradleLocalX + cradleWidth / 2 + mainBodyWidth / 2;
+            mainBody.position.x = cradleLocalX + cradleWidth / 2 + (mainBodyWidth / 2 - 0.5);
             mainBody.castShadow = true;
             sliderGroup.add(mainBody);
 
