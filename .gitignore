@@ -7,3 +7,15 @@ FLOWS.md
 node_modules/
 
 package-lock.json
+
+*.FCStd
+*.FCBak
+*.FCBak.gz
+*.FCBak.gz.part
+*.FCBak.gz.part.1
+*.FCBak.gz.part.2
+*.FCBak.gz.part.3
+*.FCBak.gz.part.4
+*.FCBak.gz.part.5
+*.FCBak.gz.part.6
+*.FCBak.gz.part.7
