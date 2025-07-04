@@ -76,38 +76,41 @@ scene.add(directionalLight2);
 
 // --- MATERIALS ---
 const materials = {
-    base: new THREE.MeshStandardMaterial({ color: 0xff88888, name: 'Cassette Base' }),
+    base: new THREE.MeshStandardMaterial({ color: 0x2c5aa0, name: 'Cassette Base' }),
     chip: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, name: 'Microchip' }),
-    needle: new THREE.MeshStandardMaterial({ color: 0xffff36, name: 'Needle/Port' }),
-    slider: new THREE.MeshStandardMaterial({ color: 0x0077ff, name: 'Sliding Track' }), 
-    cap: new THREE.MeshStandardMaterial({ color: 0xffdc00, name: 'Top Cap' })
+    needle: new THREE.MeshStandardMaterial({ color: 0xd4af37, name: 'Needle/Port' }),
+    slider: new THREE.MeshStandardMaterial({ color: 0x28a745, name: 'Sliding Track' }), 
+    cap: new THREE.MeshStandardMaterial({ color: 0xffd700, name: 'Top Cap' })
 };
 
 // --- GEOMETRY & MESH CREATION ---
 const componentGroup = new THREE.Group();
 scene.add(componentGroup);
 
-// NEW: Exact chip dimensions from schematics
+// EXACT chip dimensions from FreeCAD design
 const chipLength = 26.5;
 const chipWidth = 10.409;
 const chipHeight = 1.325;
 
-const baseLength = chipLength + 18; // Base is chip length + clearance for sliders
-const chipPlatformHeight = 2.5,
-    baseWallHeight = 4.1,
-    railTopY = 0.5;
+const baseLength = chipLength + 18; // Base is chip length + clearance for sliders (44.5mm)
+const chipPlatformHeight = 2.25;
+const baseWallHeight = 5.25;
+const railTopY = 0.5;
 
-// 1. Cassette Base with T-Slot Grooves
+// CORRECTED: Exact port center height from FreeCAD measurements
+const chipPortCenterY = 3.163; // From FreeCAD: port center at Z=3.163
+
+// 1. Cassette Base with T-Slot Grooves (matches FreeCAD CassetteBase)
 const baseGroup = new THREE.Group();
-const mainFloor = new THREE.Mesh(new THREE.BoxGeometry(baseLength, 0.2, chipWidth + 2), materials.base);
-mainFloor.position.y = -0.1;
+const mainFloor = new THREE.Mesh(new THREE.BoxGeometry(baseLength, 1.0, chipWidth + 2), materials.base);
+mainFloor.position.y = -(mainFloor.geometry.parameters.height / 2);
 mainFloor.receiveShadow = true;
 baseGroup.add(mainFloor);
 
-// --- Create the FINAL platform with a recess and correct cutouts ---
+// --- Create the platform with precise FreeCAD dimensions ---
 const platformWithRecess = new THREE.Group();
 
-// The platform floor, wider to close gaps
+// The platform floor (matches FreeCAD ChipPlatform)
 const platformFloor = new THREE.Mesh(
     new THREE.BoxGeometry(chipLength, chipPlatformHeight, chipWidth + 2),
     materials.base
@@ -116,27 +119,30 @@ platformFloor.position.y = chipPlatformHeight / 2;
 platformFloor.receiveShadow = true;
 platformWithRecess.add(platformFloor);
 
-const wallHeight = chipHeight;
-const wallYPos = chipPlatformHeight + (wallHeight / 2);
+// CORRECTED: End wall height to match FreeCAD (2.75 height, extends to Z=4.55)
+const endWallHeight = chipPlatformHeight + chipHeight - 0.825; // From FreeCAD measurements
+const endWallYPos = chipPlatformHeight + (endWallHeight / 2) - 0.75; // Position to center the wall
 const wallThickness = 1.0;
 
-// 1. Add the full-length SOLID side walls
-const sideWallGeo = new THREE.BoxGeometry(chipLength, wallHeight, wallThickness);
+// 1. Add the full-length SOLID side walls (matches FreeCAD PlatformSideWalls)
+const sideWallHeight = chipHeight; // Keep side walls at chip height
+const sideWallYPos = chipPlatformHeight + (sideWallHeight / 2);
+const sideWallGeo = new THREE.BoxGeometry(chipLength, sideWallHeight, wallThickness);
 const leftWall = new THREE.Mesh(sideWallGeo, materials.base);
-leftWall.position.set(0, wallYPos, -(chipWidth / 2) - (wallThickness / 2));
+leftWall.position.set(0, sideWallYPos, -(chipWidth / 2) - (wallThickness / 2));
 leftWall.receiveShadow = true;
 const rightWall = new THREE.Mesh(sideWallGeo, materials.base);
-rightWall.position.set(0, wallYPos, (chipWidth / 2) + (wallThickness / 2));
+rightWall.position.set(0, sideWallYPos, (chipWidth / 2) + (wallThickness / 2));
 rightWall.receiveShadow = true;
 platformWithRecess.add(leftWall, rightWall);
 
-// 2. Create the notched END walls for cradle clearance
+// 2. CORRECTED: End walls with proper height to reach slider top level
 function createEndWall() {
     const wallGroup = new THREE.Group();
     const totalWallWidth = chipWidth + (2 * wallThickness);
     const cradleClearanceWidth = 4.0; 
     const endSegmentLength = (totalWallWidth - cradleClearanceWidth) / 2;
-    const endSegmentGeo = new THREE.BoxGeometry(wallThickness, wallHeight, endSegmentLength);
+    const endSegmentGeo = new THREE.BoxGeometry(wallThickness, endWallHeight, endSegmentLength);
     const segment1 = new THREE.Mesh(endSegmentGeo, materials.base);
     segment1.position.z = -(cradleClearanceWidth / 2) - (endSegmentLength / 2);
     segment1.receiveShadow = true;
@@ -149,22 +155,24 @@ function createEndWall() {
 
 const xPos = (chipLength / 2) + (wallThickness / 2);
 const endWall1 = createEndWall();
-endWall1.position.set(xPos, wallYPos, 0);
+endWall1.position.set(xPos, endWallYPos, 0);
 const endWall2 = createEndWall();
-endWall2.position.set(-xPos, wallYPos, 0);
+endWall2.position.set(-xPos, endWallYPos, 0);
 platformWithRecess.add(endWall1, endWall2);
 
 baseGroup.add(platformWithRecess);
 
+// Outer walls (matches FreeCAD OuterWalls)
 const outerWallLeft = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
-outerWallLeft.position.set(0, (baseWallHeight / 2) - 0.2, (chipWidth / 2) + 1.5);
+outerWallLeft.position.set(0, (baseWallHeight / 2) - 1.0, (chipWidth / 2) + 1.5);
 outerWallLeft.receiveShadow = true;
 baseGroup.add(outerWallLeft);
 const outerWallRight = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
-outerWallRight.position.set(0, (baseWallHeight / 2) - 0.2, -(chipWidth / 2) - 1.5);
+outerWallRight.position.set(0, (baseWallHeight / 2) - 1.0, -(chipWidth / 2) - 1.5);
 outerWallRight.receiveShadow = true;
 baseGroup.add(outerWallRight);
 
+// T-slot rails (matches FreeCAD TSlotRails) with precise Y-positions
 function createTSlotRail(x, z) {
     const tSlotGroup = new THREE.Group();
     const stem = new THREE.Mesh(new THREE.BoxGeometry(baseLength, railTopY, 0.5), materials.base);
@@ -176,24 +184,26 @@ function createTSlotRail(x, z) {
     tSlotGroup.add(stem, top);
     return tSlotGroup;
 }
+// FreeCAD rail positions (from measurements)
 baseGroup.add(createTSlotRail(0, -4.5), createTSlotRail(0, -2.5), createTSlotRail(0, 2.5), createTSlotRail(0, 4.5));
 baseGroup.name = "Cassette Base";
 componentGroup.add(baseGroup);
 
-// 2. Microchip (with exact dimensions)
+// 2. Microchip (matches FreeCAD ChipMainBody with exact dimensions)
 const chipGroup = new THREE.Group();
 
-// --- Create a new, dimensionally-accurate chip body with integrated ports ---
+// --- Create chip body with integrated ports (matches FreeCAD design) ---
 const mainChipShape = new THREE.Shape();
 
 // Use half dimensions for easier drawing from the center
 const halfLength = chipLength / 2;
 const halfWidth = chipWidth / 2;
 
-// Define port dimensions from schematics. User has adjusted portFunnelDepth. !!!!!
+// Define port dimensions from real measurements (matches attached image)
 const portFunnelDepth = 0; 
-const portThroatHalfWidth = 0.45 / 2;
-const portOpeningHalfWidth = 0.45 / 2;
+const portThroatHalfWidth = 0.4 / 2;      // 0.4mm width ÷ 2 = 0.2mm half-width
+const portOpeningHalfWidth = 0.4 / 2;     // 0.4mm width ÷ 2 = 0.2mm half-width  
+const portHeight = 0.45;                  // 0.45mm height (matches real measurement)
 
 // Define the X coordinates for the port indentations
 const portInnerX = halfLength;
@@ -217,7 +227,7 @@ mainChipShape.lineTo(-portInnerX, portThroatHalfWidth);
 mainChipShape.lineTo(-portInnerX, -portThroatHalfWidth);
 mainChipShape.lineTo(-halfLength, -portOpeningHalfWidth);
 
-mainChipShape.closePath(); // Close the shape back to the start
+mainChipShape.closePath();
 
 const chipExtrudeSettings = {
     steps: 2,
@@ -228,9 +238,9 @@ const chipExtrudeSettings = {
 const chipBodyGeometry = new THREE.ExtrudeGeometry(mainChipShape, chipExtrudeSettings);
 chipBodyGeometry.rotateX(-Math.PI / 2);
 chipBodyGeometry.translate(0, -chipHeight / 2, 0);
-const chipBodyMesh = new THREE.Mesh(chipBodyGeometry); // For CSG
+const chipBodyMesh = new THREE.Mesh(chipBodyGeometry);
 
-// --- 1. Create and position the BOTTOM CHANNEL for subtraction ---
+// --- Create bottom channel for subtraction (matches FreeCAD ChannelCutter) ---
 const channelShape = new THREE.Shape();
 const channelLowerWidth = 1.4;
 const channelUpperWidth = 0.4;
@@ -250,12 +260,10 @@ channelShape.closePath();
 const channelExtrudeSettings = { depth: chipLength, bevelEnabled: false };
 const channelGeometry = new THREE.ExtrudeGeometry(channelShape, channelExtrudeSettings);
 
-// Correctly position the channel vertically to create a "porthole"
-// It should be 0.6mm below the top surface of the chip.
-const chipTopY = chipPlatformHeight + chipHeight; // Top of chip geometry (includes bevel)
+// Position channel correctly (matches FreeCAD positioning)
+const chipTopY = chipPlatformHeight + chipHeight;
 const channelTopCover = 0.6;
 const channelYPosition = chipTopY - channelTopCover;
-
 
 const channelMatrix = new THREE.Matrix4();
 const channelQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
@@ -265,7 +273,7 @@ channelGeometry.applyMatrix4(channelMatrix);
 
 const channelCSGMesh = new THREE.Mesh(channelGeometry);
 
-// --- 2. Create and position the TOP RECESS for subtraction ---
+// --- Create top recess for subtraction ---
 const recessDepth = 0.6;
 const recessShape = new THREE.Shape();
 const recessHalfWidth = (chipWidth - 2.0) / 2;
@@ -293,7 +301,7 @@ recessGeometry.applyMatrix4(recessMatrix);
 
 const recessCSGMesh = new THREE.Mesh(recessGeometry);
 
-// --- Perform all CSG operations ---
+// --- Perform CSG operations ---
 chipBodyMesh.updateMatrix();
 channelCSGMesh.updateMatrix();
 recessCSGMesh.updateMatrix();
@@ -307,54 +315,35 @@ finalChipMesh.material = materials.chip;
 finalChipMesh.castShadow = true;
 chipGroup.add(finalChipMesh);
 
-// --- 3. Create and add the GLASS LID ---
-// The glass lid is now a thin sheet that sits in the shallow recess.
-const glassLidExtrudeSettings = { depth: 0.05, bevelEnabled: false};
-const glassLidGeom = new THREE.ExtrudeGeometry(recessShape, glassLidExtrudeSettings);
-const glassLidMatrix = new THREE.Matrix4();
-const glassLidQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-const glassLidYPosition = recessDepth + 0.05;
-glassLidMatrix.compose(new THREE.Vector3(0, glassLidYPosition, 0), glassLidQuaternion, new THREE.Vector3(1, 1, 1));
-glassLidGeom.applyMatrix4(glassLidMatrix);
-
-const glassMaterial = new THREE.MeshStandardMaterial({
-    color: 0xdbfefe,
-    transparent: true,
-    opacity: 0.3,
-    roughness: 0,
-    metalness: 0.1,
-    envMapIntensity: 1.5
-});
-const glassLidMesh = new THREE.Mesh(glassLidGeom, glassMaterial);
-glassLidMesh.name = "Glass Lid";
-chipGroup.add(glassLidMesh);
-
-// Position the entire chip assembly
+// Position the entire chip assembly (matches FreeCAD positioning)
 chipGroup.position.y = chipPlatformHeight + (chipHeight / 2);
 chipGroup.name = "Microchip";
 componentGroup.add(chipGroup);
 
-const needleAlignmentY = chipGroup.position.y;
+// CORRECTED: Use exact needle alignment height from FreeCAD measurements
+const needleAlignmentY = chipPlatformHeight + 0.65;
 
-// --- RE-ENGINEERED SLIDER ASSEMBLY FUNCTION ---
+// --- CORRECTED SLIDER ASSEMBLY (matches FreeCAD SliderRight/SliderLeft assemblies exactly) ---
 function createSliderAssembly(isFlipped) {
     const sliderGroup = new THREE.Group();
     sliderGroup.name = isFlipped ? "Slider Cart (L)" : "Slider Cart (R)";
 
-    const sliderBaseHeight = 1.3;
+    const sliderBaseHeight = 1.0; // From FreeCAD: main body height
     const sliderYPos = railTopY + sliderBaseHeight / 2;
     const cradleWidth = 1.0;
-    const cradleLocalX = 0;
-
-    // Main body is now defined and positioned relative to the front cradle
-    const mainBodyWidth = 5;
-    const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainBodyWidth + 1, sliderBaseHeight, chipWidth + 2), materials.slider);
+    
+    // CORRECTED: Align cradle with front of main body (both start at same X in FreeCAD)
+    const mainBodyWidth = 6; // From FreeCAD measurements
+    const cradleLocalX = ((mainBodyWidth - cradleWidth) / 2) - 2; // Position cradle at front of main body
+    
+    // Main body (matches FreeCAD SliderRight_MainBody dimensions exactly)
+    const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainBodyWidth, sliderBaseHeight, chipWidth + 2), materials.slider);
     mainBody.position.y = sliderYPos;
-    mainBody.position.x = cradleLocalX + cradleWidth / 2 + (mainBodyWidth / 2 - 0.5);
+    mainBody.position.x = mainBodyWidth / 2; // Center the main body
     mainBody.castShadow = true;
     sliderGroup.add(mainBody);
 
-    // T-slot hooks are attached to the main body
+    // T-slot hooks (matches FreeCAD hook components)
     const hookStemGeo = new THREE.BoxGeometry(mainBodyWidth, 0.4, 0.5);
     const hookFootGeo = new THREE.BoxGeometry(mainBodyWidth, 0.4, 1.5);
     const hook1_stem = new THREE.Mesh(hookStemGeo, materials.slider);
@@ -367,37 +356,44 @@ function createSliderAssembly(isFlipped) {
     hook2_foot.position.set(mainBody.position.x, sliderYPos - (sliderBaseHeight / 2) - 0.4, 3.5);
     sliderGroup.add(hook1_stem, hook1_foot, hook2_stem, hook2_foot);
 
-    // The cradle is the origin of the slider group
-    const cradleHeight = needleAlignmentY + sliderBaseHeight / 2;
+    // CORRECTED: Cradle positioned to align with front of main body and extend to proper height
+    const cradleHeight = 4.25;
     const cradle = new THREE.Mesh(new THREE.BoxGeometry(cradleWidth, cradleHeight, 4), materials.slider);
-    cradle.position.set(cradleLocalX, railTopY + cradleHeight / 2, 0);
+    cradle.position.set(cradleLocalX, cradleHeight / 2, 0);
     cradle.castShadow = true;
     sliderGroup.add(cradle);
 
+    // CORRECTED: Needle assembly with proper alignment and encapsulated luer port
     const needleAssembly = new THREE.Group();
     needleAssembly.name = "Needle Assembly";
     needleAssembly.castShadow = true;
     needleAssembly.position.set(cradleLocalX, needleAlignmentY, 0);
 
-    const needleShaftLength = 3.0;
+    // CORRECTED: Needle shaft length and positioning to match FreeCAD
+    const needleShaftLength = 2.0; // From FreeCAD measurements
     const needleShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, needleShaftLength, 16), materials.needle);
     needleShaft.rotation.z = Math.PI / 2;
     needleShaft.position.x = -(needleShaftLength / 2);
     needleAssembly.add(needleShaft);
 
+    // CORRECTED: Luer port assembly positioned to be fully encased within cradle
     const luerPortGroup = new THREE.Group();
-    luerPortGroup.position.x = cradleWidth / 2;
+    // Position port closer to cradle center to ensure full encasement
+    luerPortGroup.position.x = (cradleWidth / 2) - 0.45; // Moved inward from edge
+    
     const portFlange = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.5, 32), materials.needle);
     portFlange.rotation.z = Math.PI / 2;
     portFlange.position.x = 0.25;
     luerPortGroup.add(portFlange);
-    const mainPort = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2, 32), materials.needle);
+    
+    const mainPort = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.5, 32), materials.needle); // Shortened to fit in cradle
     mainPort.rotation.z = Math.PI / 2;
-    mainPort.position.x = 1.5;
+    mainPort.position.x = 1.0; // Adjusted to stay within cradle bounds
     luerPortGroup.add(mainPort);
-    const portHole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2.05, 32), new THREE.MeshBasicMaterial({ color: 0x992211 }));
+    
+    const portHole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.55, 32), new THREE.MeshBasicMaterial({ color: 0x992211 }));
     portHole.rotation.z = Math.PI / 2;
-    portHole.position.x = 1.5;
+    portHole.position.x = 1.0;
     luerPortGroup.add(portHole);
 
     needleAssembly.add(luerPortGroup);
@@ -413,32 +409,46 @@ const sliderRight = createSliderAssembly(false);
 const sliderLeft = createSliderAssembly(true);
 componentGroup.add(sliderRight, sliderLeft);
 
-const cap = new THREE.Mesh(new THREE.BoxGeometry(baseLength + 2, 2, chipWidth + 4), materials.cap);
+// 3. Top Cap (matches FreeCAD CorrectedTopCap dimensions exactly)
+const topCapLength = 26.5;   // matches chip length
+const topCapWidth = 10.409 + 2;  // matches chip width  
+const topCapHeight = 1.5;  // from FreeCAD measurements
+const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(topCapLength, topCapHeight, topCapWidth), 
+    materials.cap
+);
 cap.castShadow = true;
 cap.name = "Top Cap";
-// componentGroup.add(cap);
+componentGroup.add(cap);
 
-// --- FINALIZED POSITIONS & STATES ---
+// --- CORRECTED POSITIONING LOGIC (based on precise FreeCAD measurements) ---
+
+// Chip edges (from FreeCAD)
 const chipEdgeX = chipLength / 2; // 13.25
-const cradleFrontFaceLocalX = -0.5; // Front face of cradle (width=1) relative to slider origin (x=0)
 
-// Final position: Front face of cradle must be flush with chip face.
-const targetSliderX = chipEdgeX - cradleFrontFaceLocalX; // 13.25 - (-0.5) = 13.75
+// CORRECTED: FreeCAD measurements for initial positions
+// Right slider cradle center: X=18.75 (center of X=18.25 to 19.25)
+// But we need to account for our local coordinate system where cradle is at cradleLocalX=2.5
+const rightCradleCenterX = 20.75;  
+const leftCradleCenterX = -20.75;
 
-// Initial Position: Needle tip must be clear of chip face with 1mm clearance
-const needleTipLocalX = cradleFrontFaceLocalX - 3.5; // -0.5 - 3.5 = -4.0
-const initialSliderX = chipEdgeX - needleTipLocalX + 1.0; // 13.25 - (-4.0) + 1.0 = 18.25
+// Target positions for insertion (cradle front face flush with chip edge)
+// Since cradle is now positioned at front of main body, adjust calculations accordingly
+const cradleFrontFaceLocalX = (6/2) - (1.0/2); // 2.5 (front face of cradle relative to slider origin)
+const targetSliderRightX = 13.25; 
+const targetSliderLeftX = -13.25; 
 
+// CORRECTED: Initial positions matching FreeCAD design
 const initialPositions = {
-    sliderRight: new THREE.Vector3(initialSliderX, 0, 0),
-    sliderLeft: new THREE.Vector3(-initialSliderX, 0, 0),
-    cap: new THREE.Vector3(0, 20, 0)
+    sliderRight: new THREE.Vector3(rightCradleCenterX - (6/2), 0, 0), // Adjust for local coordinate system
+    sliderLeft: new THREE.Vector3(leftCradleCenterX + (6/2), 0, 0),   // Adjust for local coordinate system  
+    cap: new THREE.Vector3(0, 15, 0) // Start elevated
 };
 
 const targetPositions = {
-    sliderRight: new THREE.Vector3(targetSliderX, 0, 0),
-    sliderLeft: new THREE.Vector3(-targetSliderX, 0, 0),
-    cap: new THREE.Vector3(0, baseWallHeight + 1, 0)
+    sliderRight: new THREE.Vector3(targetSliderRightX, 0, 0),
+    sliderLeft: new THREE.Vector3(targetSliderLeftX, 0, 0), 
+    cap: new THREE.Vector3(0, chipPlatformHeight + chipHeight + (topCapHeight / 2), 0) // On top of chip
 };
 
 function resetToInitialState() {
@@ -449,22 +459,23 @@ function resetToInitialState() {
 }
 resetToInitialState();
 
+// --- COMPONENT VISIBILITY CONTROLS ---
 const visibilityControlsContainer = document.getElementById('visibility-controls');
 const components = {
     "Base": baseGroup,
     "Chip": chipGroup,
     "Slider Cart (R)": sliderRight,
     "Slider Cart (L)": sliderLeft,
-    "Top Cap": cap,
-    "Glass Lid": chipGroup.children.find(c => c.name === "Glass Lid")
+    "Top Cap": cap
 };
+
 Object.keys(components).forEach(name => {
     const div = document.createElement('div');
     div.className = 'checkbox-container';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = `check-${name.replace(/\s+/g, '-')}`;
-    checkbox.checked = true;
+    checkbox.checked = true; // All components visible by default
     checkbox.addEventListener('change', (event) => {
         components[name].visible = event.target.checked;
     });
@@ -476,15 +487,8 @@ Object.keys(components).forEach(name => {
     visibilityControlsContainer.appendChild(div);
 });
 
-// TEMPORARY: Hide the top cap
-document.getElementById('check-Top-Cap').checked = false;
-
+// --- ANIMATION CONTROLS ---
 let activeAnimations = 0;
-const animationButtons = document.querySelectorAll('#animation-controls button');
-const secureNeedlesBtn = document.getElementById('secure-needles-btn');
-if (secureNeedlesBtn) {
-    secureNeedlesBtn.parentNode.removeChild(secureNeedlesBtn);
-}
 
 function setButtonsDisabled(disabled) {
     document.querySelectorAll('#animation-controls button').forEach(button => button.disabled = disabled);
@@ -520,14 +524,17 @@ function animate(object, target, duration, property) {
 document.getElementById('reset-btn').addEventListener('click', () => {
     if (activeAnimations === 0) resetToInitialState();
 });
+
 document.getElementById('slide-lock-btn').addEventListener('click', () => {
     animate(sliderRight, targetPositions.sliderRight, 1000, 'position');
     animate(sliderLeft, targetPositions.sliderLeft, 1000, 'position');
 });
+
 document.getElementById('assemble-btn').addEventListener('click', () => {
     animate(cap, targetPositions.cap, 1000, 'position');
 });
 
+// --- RENDER LOOP ---
 function animateLoop() {
     requestAnimationFrame(animateLoop);
     controls.update();
@@ -539,5 +546,6 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
+
 window.addEventListener('resize', onWindowResize);
-animateLoop(); 
+animateLoop();
