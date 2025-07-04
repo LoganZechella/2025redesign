@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSG } from 'three-csg-ts';
 import { PLYExporter } from 'three/examples/jsm/exporters/PLYExporter.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
 // --- BASIC SETUP ---
 const container = document.getElementById('canvas-container');
@@ -77,7 +78,7 @@ scene.add(directionalLight2);
 
 // --- MATERIALS ---
 const materials = {
-    base: new THREE.MeshStandardMaterial({ color: 0x4a5568, name: 'Cassette Base' }),
+    base: new THREE.MeshStandardMaterial({ color: 0x9ca3af, name: 'Cassette Base' }),
     chip: new THREE.MeshStandardMaterial({ color: 0x1a202c, name: 'Microchip' }),
     needle: new THREE.MeshStandardMaterial({ color: 0xf6ad55, name: 'Needle/Port' }),
     slider: new THREE.MeshStandardMaterial({ color: 0x38a169, name: 'Sliding Track' }),
@@ -100,6 +101,22 @@ const railTopY = 0.5;
 
 // CORRECTED: Exact port center height from FreeCAD measurements
 const chipPortCenterY = 3.163; // From FreeCAD: port center at Z=3.163
+
+// --- ATTACHMENT MECHANISM CONFIGURATION ---
+// Define shared parameters for cap attachment fins and base slots
+const finThickness = 0.25;  // Much thinner fins
+const finHeight = 2.5;
+const finLength = 3.0;      // Slightly shorter
+
+// Fin positions centered in the base wall width (only 4 side fins)
+const outerWallZPosition = (chipWidth / 2) + 1.5; // Center of outer base walls
+const finPositions = [
+    // Side fins only - centered in the base wall width
+    { x: 8, z: outerWallZPosition, orientation: 'side' },           // Right wall, front
+    { x: -8, z: outerWallZPosition, orientation: 'side' },          // Right wall, back  
+    { x: 8, z: -outerWallZPosition, orientation: 'side' },          // Left wall, front
+    { x: -8, z: -outerWallZPosition, orientation: 'side' }          // Left wall, back
+];
 
 // 1. Cassette Base with T-Slot Grooves (matches FreeCAD CassetteBase)
 const baseGroup = new THREE.Group();
@@ -163,13 +180,60 @@ platformWithRecess.add(endWall1, endWall2);
 
 baseGroup.add(platformWithRecess);
 
-// Outer walls (matches FreeCAD OuterWalls)
-const outerWallLeft = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
-outerWallLeft.position.set(0, (baseWallHeight / 2) - 1.0, (chipWidth / 2) + 1.5);
+// --- ADD ATTACHMENT SLOTS ---
+// Create actual slot cutouts in the base walls where fins will insert
+const slotDepth = finHeight; // Slots go deep enough for the fins
+
+// Create cutouts for each fin position
+const slotCutouts = [];
+finPositions.forEach((pos, index) => {
+    // Create slot cutout geometry - slightly larger than fin for clearance
+    const slotGeometry = new THREE.BoxGeometry(finLength + 0.05, slotDepth + 0.1, finThickness + 0.05);
+    
+    const slotCutout = new THREE.Mesh(slotGeometry, materials.base);
+    // Position cutout at the top of the base wall, extending downward
+    // Wall top Y = baseWallHeight - 1.0, slot center Y = wall top - slotDepth/2
+    const slotCenterY = (baseWallHeight - 1.0) - (slotDepth / 2);
+    slotCutout.position.set(pos.x, slotCenterY, pos.z);
+    slotCutout.updateMatrix();
+    slotCutouts.push(slotCutout);
+});
+
+// Outer walls with slot cutouts (matches FreeCAD OuterWalls)
+const outerWallLeftBase = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
+outerWallLeftBase.position.set(0, (baseWallHeight / 2) - 1.0, (chipWidth / 2) + 1.5);
+outerWallLeftBase.updateMatrix();
+
+const outerWallRightBase = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
+outerWallRightBase.position.set(0, (baseWallHeight / 2) - 1.0, -(chipWidth / 2) - 1.5);
+outerWallRightBase.updateMatrix();
+
+// Create CSG operations to subtract slots from walls
+let leftWallCSG = CSG.fromMesh(outerWallLeftBase);
+let rightWallCSG = CSG.fromMesh(outerWallRightBase);
+
+// Subtract slot cutouts from appropriate walls
+slotCutouts.forEach((cutout, index) => {
+    const cutoutCSG = CSG.fromMesh(cutout);
+    const pos = finPositions[index];
+    
+    if (pos.z > 0) {
+        // Left wall (positive Z)
+        leftWallCSG = leftWallCSG.subtract(cutoutCSG);
+    } else {
+        // Right wall (negative Z)
+        rightWallCSG = rightWallCSG.subtract(cutoutCSG);
+    }
+});
+
+// Create final walls with slots
+const outerWallLeft = CSG.toMesh(leftWallCSG, outerWallLeftBase.matrix);
+outerWallLeft.material = materials.base;
 outerWallLeft.receiveShadow = true;
 baseGroup.add(outerWallLeft);
-const outerWallRight = new THREE.Mesh(new THREE.BoxGeometry(baseLength, baseWallHeight, 1), materials.base);
-outerWallRight.position.set(0, (baseWallHeight / 2) - 1.0, -(chipWidth / 2) - 1.5);
+
+const outerWallRight = CSG.toMesh(rightWallCSG, outerWallRightBase.matrix);
+outerWallRight.material = materials.base;
 outerWallRight.receiveShadow = true;
 baseGroup.add(outerWallRight);
 
@@ -187,6 +251,7 @@ function createTSlotRail(x, z) {
 }
 // FreeCAD rail positions (from measurements)
 baseGroup.add(createTSlotRail(0, -4.5), createTSlotRail(0, -2.5), createTSlotRail(0, 2.5), createTSlotRail(0, 4.5));
+
 baseGroup.name = "Cassette Base";
 componentGroup.add(baseGroup);
 
@@ -480,24 +545,37 @@ outerLongWall2.castShadow = false;
 // outerShortWall2.position.set(-topCapRoofLength/2 + capWallThickness/2, -wallHeight/2, 0);
 // outerShortWall2.castShadow = true;
 
+  // --- ADD ATTACHMENT FINS ---
+  // Create thin fins that extend downward from the cap for secure attachment
+
+const attachmentFins = [];
+finPositions.forEach((pos, index) => {
+    // All fins are now side fins with the same geometry
+    const finGeometry = new THREE.BoxGeometry(finLength, finHeight, finThickness);
+    
+    const fin = new THREE.Mesh(finGeometry, materials.cap);
+    
+    // Position fins centered in the base wall width, extending downward
+    fin.position.set(pos.x, -(finHeight / 2) + 0.25, pos.z);
+    fin.updateMatrix();
+    attachmentFins.push(fin);
+});
+
 // Combine all pieces using CSG to create unified cap
 mainCap.updateMatrix();
 roofCap.updateMatrix();
 outerLongWall1.updateMatrix();
 outerLongWall2.updateMatrix();
-// innerShortWall1.updateMatrix();
-// innerShortWall2.updateMatrix();
-// outerShortWall1.updateMatrix();
-// outerShortWall2.updateMatrix();
 
 let combinedCapCSG = CSG.fromMesh(mainCap);
 combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(roofCap));
 combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerLongWall1));
 combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerLongWall2));
-// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(innerShortWall1));
-// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(innerShortWall2));
-// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerShortWall1));
-// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerShortWall2));
+
+// Add all attachment fins to the cap
+attachmentFins.forEach(fin => {
+    combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(fin));
+});
 
 const cap = CSG.toMesh(combinedCapCSG, mainCap.matrix);
 cap.material = materials.cap;
@@ -668,6 +746,199 @@ document.getElementById('export-ply-btn').addEventListener('click', () => {
     link.href = URL.createObjectURL(blob);
     link.download = 'cassette-visible.ply';
     link.click();
+});
+
+// GLB Export - Perfect for online viewing and sharing
+document.getElementById('export-glb-btn').addEventListener('click', () => {
+    const exporter = new GLTFExporter();
+    const tempScene = new THREE.Scene();
+
+    // Add only visible components to temporary scene
+    for (const name in components) {
+        const component = components[name];
+        if (component.visible) {
+            const clonedComponent = component.clone();
+            tempScene.add(clonedComponent);
+        }
+    }
+
+    // Export as GLB (binary glTF) - single file with materials preserved
+    exporter.parse(
+        tempScene,
+        (gltf) => {
+            const blob = new Blob([gltf], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'cassette-visible.glb';
+            link.click();
+        },
+        (error) => {
+            console.error('GLB export failed:', error);
+        },
+        { binary: true }
+    );
+});
+
+// HTML Export - Standalone viewer file
+document.getElementById('export-html-btn').addEventListener('click', () => {
+    const exporter = new GLTFExporter();
+    const tempScene = new THREE.Scene();
+
+    // Add only visible components to temporary scene
+    for (const name in components) {
+        const component = components[name];
+        if (component.visible) {
+            const clonedComponent = component.clone();
+            tempScene.add(clonedComponent);
+        }
+    }
+
+    // Export as glTF JSON for embedding in HTML
+    exporter.parse(
+        tempScene,
+        (gltf) => {
+            const gltfJson = JSON.stringify(gltf);
+            
+            const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cassette 3D Model</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        .info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h3>Cassette 3D Model</h3>
+        <p>Interactive 3D model exported from Cassette Designer</p>
+    </div>
+    
+    <div class="controls">
+        <p><strong>Controls:</strong></p>
+        <p>• Left mouse: Rotate</p>
+        <p>• Right mouse: Pan</p>
+        <p>• Scroll: Zoom</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // Embedded glTF data
+        const gltfData = ${gltfJson};
+        
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f2f5);
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 50, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        
+        // Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 1;
+        controls.maxDistance = 150;
+        controls.maxPolarAngle = Math.PI / 1.5;
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        directionalLight.position.set(-15, 25, 20);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+        
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight2.position.set(15, 10, -20);
+        scene.add(directionalLight2);
+        
+        // Load the embedded model
+        const loader = new THREE.GLTFLoader();
+        loader.parse(JSON.stringify(gltfData), '', (gltf) => {
+            const model = gltf.scene;
+            scene.add(model);
+            
+            // Enable shadows
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+        });
+        
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        animate();
+    </script>
+</body>
+</html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'cassette-viewer.html';
+            link.click();
+        },
+        (error) => {
+            console.error('HTML export failed:', error);
+        },
+        { binary: false }
+    );
 });
 
 // --- RENDER LOOP ---
