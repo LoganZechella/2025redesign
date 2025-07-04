@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSG } from 'three-csg-ts';
+import { PLYExporter } from 'three/examples/jsm/exporters/PLYExporter.js';
 
 // --- BASIC SETUP ---
 const container = document.getElementById('canvas-container');
@@ -76,11 +77,11 @@ scene.add(directionalLight2);
 
 // --- MATERIALS ---
 const materials = {
-    base: new THREE.MeshStandardMaterial({ color: 0x2c5aa0, name: 'Cassette Base' }),
-    chip: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, name: 'Microchip' }),
-    needle: new THREE.MeshStandardMaterial({ color: 0xd4af37, name: 'Needle/Port' }),
-    slider: new THREE.MeshStandardMaterial({ color: 0x28a745, name: 'Sliding Track' }), 
-    cap: new THREE.MeshStandardMaterial({ color: 0xffd700, name: 'Top Cap' })
+    base: new THREE.MeshStandardMaterial({ color: 0x4a5568, name: 'Cassette Base' }),
+    chip: new THREE.MeshStandardMaterial({ color: 0x1a202c, name: 'Microchip' }),
+    needle: new THREE.MeshStandardMaterial({ color: 0xf6ad55, name: 'Needle/Port' }),
+    slider: new THREE.MeshStandardMaterial({ color: 0x38a169, name: 'Sliding Track' }),
+    cap: new THREE.MeshStandardMaterial({ color: 0x3182ce, name: 'Top Cap' })
 };
 
 // --- GEOMETRY & MESH CREATION ---
@@ -413,19 +414,104 @@ componentGroup.add(sliderRight, sliderLeft);
 const topCapLength = 26.5;   // matches chip length
 const topCapWidth = 10.409 + 2;  // matches chip width  
 const topCapHeight = 1.5;  // from FreeCAD measurements
-const cap = new THREE.Mesh(
+
+// Create comprehensive cap with roof extension and perimeter walls
+const capGroup = new THREE.Group();
+
+// Main cap body (existing dimensions)
+const mainCap = new THREE.Mesh(
     new THREE.BoxGeometry(topCapLength, topCapHeight, topCapWidth), 
     materials.cap
 );
+mainCap.castShadow = false;
+
+// Roof extension dimensions
+const topCapRoofLength = baseLength;
+const topCapRoofWidth = 10.409 + 4;
+const topCapRoofHeight = 0.5;
+
+// Create roof piece positioned at the top face of the main cap
+const roofCap = new THREE.Mesh(
+    new THREE.BoxGeometry(topCapRoofLength, topCapRoofHeight, topCapRoofWidth), 
+    materials.cap
+);
+roofCap.position.set(0, 0.5, 0);
+roofCap.castShadow = false;
+
+// Add perimeter walls to eliminate gaps
+const wallHeight = 0.5; // Height of the perimeter walls
+const capWallThickness = 0.5; // Thickness of the walls
+
+// Long edge walls (along the length of the cassette)
+const longWallLength = topCapRoofLength;
+const longWallGeometry = new THREE.BoxGeometry(longWallLength, wallHeight, capWallThickness * 2);
+
+// Outer long walls
+const outerLongWall1 = new THREE.Mesh(longWallGeometry, materials.cap);
+outerLongWall1.position.set(0, 0.17, topCapRoofWidth/2 - capWallThickness);
+outerLongWall1.castShadow = false;
+
+const outerLongWall2 = new THREE.Mesh(longWallGeometry, materials.cap);
+outerLongWall2.position.set(0, 0.17, -topCapRoofWidth/2 + capWallThickness);
+outerLongWall2.castShadow = false;
+
+// Short edge walls around chip perimeter
+// const shortWallLength = topCapWidth - (2 * capWallThickness);
+// const shortWallGeometry = new THREE.BoxGeometry(capWallThickness, wallHeight, shortWallLength);
+
+// // Inner short walls (around chip area)
+// const innerShortWall1 = new THREE.Mesh(shortWallGeometry, materials.cap);
+// innerShortWall1.position.set(topCapLength/2, -wallHeight/2, 0);
+// innerShortWall1.castShadow = true;
+
+// const innerShortWall2 = new THREE.Mesh(shortWallGeometry, materials.cap);
+// innerShortWall2.position.set(-topCapLength/2, -wallHeight/2, 0);
+// innerShortWall2.castShadow = true;
+
+// // Outer short walls (at the ends of the roof extension)
+// const outerShortWallLength = topCapRoofWidth - (2 * capWallThickness);
+// const outerShortWallGeometry = new THREE.BoxGeometry(capWallThickness, wallHeight, outerShortWallLength);
+
+// const outerShortWall1 = new THREE.Mesh(outerShortWallGeometry, materials.cap);
+// outerShortWall1.position.set(topCapRoofLength/2 - capWallThickness/2, -wallHeight/2, 0);
+// outerShortWall1.castShadow = true;
+
+// const outerShortWall2 = new THREE.Mesh(outerShortWallGeometry, materials.cap);
+// outerShortWall2.position.set(-topCapRoofLength/2 + capWallThickness/2, -wallHeight/2, 0);
+// outerShortWall2.castShadow = true;
+
+// Combine all pieces using CSG to create unified cap
+mainCap.updateMatrix();
+roofCap.updateMatrix();
+outerLongWall1.updateMatrix();
+outerLongWall2.updateMatrix();
+// innerShortWall1.updateMatrix();
+// innerShortWall2.updateMatrix();
+// outerShortWall1.updateMatrix();
+// outerShortWall2.updateMatrix();
+
+let combinedCapCSG = CSG.fromMesh(mainCap);
+combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(roofCap));
+combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerLongWall1));
+combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerLongWall2));
+// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(innerShortWall1));
+// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(innerShortWall2));
+// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerShortWall1));
+// combinedCapCSG = combinedCapCSG.union(CSG.fromMesh(outerShortWall2));
+
+const cap = CSG.toMesh(combinedCapCSG, mainCap.matrix);
+cap.material = materials.cap;
 cap.castShadow = true;
 cap.name = "Top Cap";
-componentGroup.add(cap);
+
+capGroup.add(cap);
+componentGroup.add(capGroup);
 
 // --- CORRECTED POSITIONING LOGIC (based on precise FreeCAD measurements) ---
 
 // Chip edges (from FreeCAD)
 const chipEdgeX = chipLength / 2; // 13.25
-
+    
 // CORRECTED: FreeCAD measurements for initial positions
 // Right slider cradle center: X=18.75 (center of X=18.25 to 19.25)
 // But we need to account for our local coordinate system where cradle is at cradleLocalX=2.5
@@ -454,8 +540,8 @@ const targetPositions = {
 function resetToInitialState() {
     sliderRight.position.copy(initialPositions.sliderRight);
     sliderLeft.position.copy(initialPositions.sliderLeft);
-    cap.position.copy(initialPositions.cap);
-    cap.visible = true;
+    capGroup.position.copy(initialPositions.cap);
+    capGroup.visible = true;
 }
 resetToInitialState();
 
@@ -466,7 +552,7 @@ const components = {
     "Chip": chipGroup,
     "Slider Cart (R)": sliderRight,
     "Slider Cart (L)": sliderLeft,
-    "Top Cap": cap
+    "Top Cap": capGroup
 };
 
 Object.keys(components).forEach(name => {
@@ -531,7 +617,57 @@ document.getElementById('slide-lock-btn').addEventListener('click', () => {
 });
 
 document.getElementById('assemble-btn').addEventListener('click', () => {
-    animate(cap, targetPositions.cap, 1000, 'position');
+    animate(capGroup, targetPositions.cap, 1000, 'position');
+});
+
+document.getElementById('export-ply-btn').addEventListener('click', () => {
+    const exporter = new PLYExporter();
+    const tempScene = new THREE.Scene();
+
+    // Add only visible components to temporary scene
+    for (const name in components) {
+        const component = components[name];
+        if (component.visible) {
+            const clonedComponent = component.clone();
+            tempScene.add(clonedComponent);
+        }
+    }
+
+    // Add vertex colors based on material colors
+    tempScene.traverse((object) => {
+        if (object.isMesh && object.material) {
+            const geometry = object.geometry;
+            const material = object.material;
+            
+            // Check if geometry already has vertex colors
+            if (!geometry.attributes.color) {
+                const positions = geometry.attributes.position;
+                const colors = new Float32Array(positions.count * 3);
+                
+                // Get color from material
+                let color = new THREE.Color(0xffffff); // default white
+                if (material.color) {
+                    color = material.color;
+                }
+                
+                // Apply the same color to all vertices
+                for (let i = 0; i < positions.count; i++) {
+                    colors[i * 3] = color.r;
+                    colors[i * 3 + 1] = color.g;
+                    colors[i * 3 + 2] = color.b;
+                }
+                
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            }
+        }
+    });
+
+    const plyData = exporter.parse(tempScene, { binary: false });
+    const blob = new Blob([plyData], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'cassette-visible.ply';
+    link.click();
 });
 
 // --- RENDER LOOP ---
