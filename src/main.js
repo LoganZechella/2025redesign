@@ -19,6 +19,15 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
+// Predeclare and initialize measurement group to avoid TDZ issues with hoisted functions
+let measurementGroup;
+measurementGroup = new THREE.Group();
+measurementGroup.name = 'Measurements';
+scene.add(measurementGroup);
+
+// Temporary vector for world position computations used during measurement scaling
+const _tmpWorld = new THREE.Vector3();
+
 // --- CONTROLS ---
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -945,6 +954,10 @@ document.getElementById('export-html-btn').addEventListener('click', () => {
 function animateLoop() {
     requestAnimationFrame(animateLoop);
     controls.update();
+    // Keep measurement labels a constant on-screen size
+    if (typeof updateMeasurementLabelsScale === 'function') {
+        updateMeasurementLabelsScale();
+    }
     renderer.render(scene, camera);
 }
 
@@ -956,3 +969,323 @@ function onWindowResize() {
 
 window.addEventListener('resize', onWindowResize);
 animateLoop();
+
+// --- MEASUREMENT SYSTEM ---
+// Allows: distance measurement (two clicks), component dimensions (click a component),
+// erase last/all, and export image with overlays included.
+
+// Container for all measurement helpers so they can be easily exported/removed
+// (Initialized above to avoid TDZ)
+
+const measurementState = {
+    mode: 'off',               // 'off' | 'distance' | 'component'
+    overlays: [],              // { type: 'distance'|'component', group: THREE.Group }[]
+    pendingPoint: null,        // THREE.Vector3 | null
+    pendingMarker: null        // THREE.Mesh | null
+};
+
+// Raycasting helpers
+const measureRaycaster = new THREE.Raycaster();
+const measureMouseNDC = new THREE.Vector2();
+
+function getRaycastableMeshes() {
+    const targets = [];
+    componentGroup.traverse((obj) => {
+        if (obj.isMesh && obj.visible && !obj.userData.isMeasurementHelper) {
+            targets.push(obj);
+        }
+    });
+    return targets;
+}
+
+function createMarkerSphere(position) {
+    // Use radius 0.5 so a unit scale == 1 world unit diameter; we will scale dynamically per frame.
+    const geometry = new THREE.SphereGeometry(0.5, 20, 20);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff3366, depthTest: false });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(position);
+    sphere.renderOrder = 999;
+    sphere.userData.isMeasurementHelper = true;
+    sphere.userData.markerPixelDiameter = 10; // target on-screen size in pixels
+    return sphere;
+}
+
+function createLineBetween(p1, p2, color = 0xff3366) {
+    const geometry = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    const material = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 1.0 });
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 999;
+    line.userData.isMeasurementHelper = true;
+    return line;
+}
+
+function drawRoundedRect(ctx, x, y, w, h, r) {
+    const radius = Math.min(r, h / 2, w / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+}
+
+function createTextSprite(text, options = {}) {
+    const {
+        fontSizePx = 24,
+        paddingPx = 8,
+        background = 'rgba(0,0,0,0.65)',
+        color = '#ffffff',
+        borderRadius = 6,
+        fontFamily = "Inter, Arial, sans-serif"
+    } = options;
+
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `500 ${fontSizePx}px ${fontFamily}`;
+    const metrics = ctx.measureText(text);
+    const textWidth = Math.ceil(metrics.width);
+    const textHeight = Math.ceil(fontSizePx * 1.2);
+    const totalWidth = (textWidth + paddingPx * 2);
+    const totalHeight = (textHeight + paddingPx * 2);
+    canvas.width = Math.max(2, Math.ceil(totalWidth * dpr));
+    canvas.height = Math.max(2, Math.ceil(totalHeight * dpr));
+    ctx.scale(dpr, dpr);
+
+    // Background
+    ctx.fillStyle = background;
+    drawRoundedRect(ctx, 0, 0, totalWidth, totalHeight, borderRadius);
+    ctx.fill();
+
+    // Text
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.font = `500 ${fontSizePx}px ${fontFamily}`;
+    ctx.fillText(text, paddingPx, totalHeight / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new THREE.Sprite(material);
+    sprite.userData.pixelHeight = totalHeight; // request this many screen pixels tall
+    sprite.userData.isMeasurementHelper = true;
+    sprite.renderOrder = 999;
+    // Initial scale will be updated per frame to match pixel height
+    return sprite;
+}
+
+function formatMm(value) {
+    return `${value.toFixed(2)} mm`;
+}
+
+function addDistanceMeasurement(p1, p2) {
+    const group = new THREE.Group();
+    group.name = 'Measurement: Distance';
+
+    const marker1 = createMarkerSphere(p1);
+    const marker2 = createMarkerSphere(p2);
+    const line = createLineBetween(p1, p2);
+
+    const midpoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    const distance = p1.distanceTo(p2);
+    const label = createTextSprite(formatMm(distance), { fontSizePx: 22, paddingPx: 8 });
+    label.position.copy(midpoint);
+
+    group.add(marker1, marker2, line, label);
+    measurementGroup.add(group);
+    measurementState.overlays.push({ type: 'distance', group });
+}
+
+function findTopComponentGroup(object3d) {
+    let current = object3d;
+    while (current && current.parent && current.parent !== componentGroup) {
+        current = current.parent;
+    }
+    return current || object3d;
+}
+
+function addComponentMeasurement(targetObject) {
+    const topGroup = findTopComponentGroup(targetObject);
+    topGroup.updateMatrixWorld(true);
+
+    const bbox = new THREE.Box3().setFromObject(topGroup);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+
+    const overlay = new THREE.Group();
+    overlay.name = 'Measurement: Component';
+
+    const helper = new THREE.Box3Helper(bbox, 0x00c2ff);
+    // Ensure helper is always visible above geometry
+    helper.traverse((obj) => {
+        if (obj.material) {
+            obj.material.depthTest = false;
+            obj.renderOrder = 999;
+        }
+        obj.userData.isMeasurementHelper = true;
+    });
+    overlay.add(helper);
+
+    const dimsLabel = createTextSprite(`${formatMm(size.x)} × ${formatMm(size.y)} × ${formatMm(size.z)}`, {
+        fontSizePx: 20,
+        paddingPx: 8
+    });
+    const labelPos = center.clone();
+    labelPos.y = bbox.max.y + 2.0; // float above the box
+    dimsLabel.position.copy(labelPos);
+    overlay.add(dimsLabel);
+
+    measurementGroup.add(overlay);
+    measurementState.overlays.push({ type: 'component', group: overlay });
+}
+
+function clearPendingPoint() {
+    measurementState.pendingPoint = null;
+    if (measurementState.pendingMarker) {
+        measurementGroup.remove(measurementState.pendingMarker);
+        measurementState.pendingMarker.geometry.dispose();
+        measurementState.pendingMarker.material.dispose();
+    }
+    measurementState.pendingMarker = null;
+}
+
+function eraseLastMeasurement() {
+    if (measurementState.pendingMarker) {
+        clearPendingPoint();
+        return;
+    }
+    const last = measurementState.overlays.pop();
+    if (last && last.group) {
+        measurementGroup.remove(last.group);
+    }
+}
+
+function eraseAllMeasurements() {
+    clearPendingPoint();
+    measurementState.overlays.forEach(({ group }) => {
+        measurementGroup.remove(group);
+    });
+    measurementState.overlays = [];
+}
+
+function updateMeasurementLabelsScale() {
+    const vFOV = THREE.MathUtils.degToRad(camera.fov);
+    const viewportHeightPx = renderer.domElement.clientHeight || 1;
+    measurementGroup.traverse((obj) => {
+        obj.getWorldPosition(_tmpWorld);
+        const distance = camera.position.distanceTo(_tmpWorld);
+        const worldHeightAtDist = 2 * Math.tan(vFOV / 2) * distance;
+        const worldPerPixel = worldHeightAtDist / viewportHeightPx;
+
+        // Keep text sprites constant on-screen height
+        if (obj.isSprite) {
+            const sprite = obj;
+            const targetPx = sprite.userData.pixelHeight || 28;
+            const targetWorldH = Math.max(0.001, worldPerPixel * targetPx);
+            const map = sprite.material.map;
+            const aspect = (map && map.image) ? (map.image.width / map.image.height) : 1.0;
+            sprite.scale.set(targetWorldH * aspect, targetWorldH, 1);
+            return;
+        }
+
+        // Keep marker spheres constant on-screen diameter
+        if (obj.isMesh && obj.userData && obj.userData.markerPixelDiameter) {
+            const pixelDia = obj.userData.markerPixelDiameter;
+            const targetWorldDiameter = Math.max(0.001, worldPerPixel * pixelDia);
+            // Geometry radius is 0.5, diameter 1 at scale 1, so scale equals targetWorldDiameter
+            obj.scale.setScalar(targetWorldDiameter);
+        }
+    });
+}
+
+// (Removed duplicate animateLoop redefinition here)
+
+// Input handling for measurement clicks
+let _pointerDown = null;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+    _pointerDown = { x: e.clientX, y: e.clientY };
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+    if (!_pointerDown) return;
+    const dx = e.clientX - _pointerDown.x;
+    const dy = e.clientY - _pointerDown.y;
+    _pointerDown = null;
+    if (Math.hypot(dx, dy) > 3) return; // treat as drag, not click
+
+    if (measurementState.mode === 'off') return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    measureMouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    measureMouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    measureRaycaster.setFromCamera(measureMouseNDC, camera);
+
+    const intersects = measureRaycaster.intersectObjects(getRaycastableMeshes(), true);
+    if (!intersects.length) return;
+
+    const hit = intersects[0];
+
+    if (measurementState.mode === 'distance') {
+        if (!measurementState.pendingPoint) {
+            measurementState.pendingPoint = hit.point.clone();
+            measurementState.pendingMarker = createMarkerSphere(hit.point);
+            measurementGroup.add(measurementState.pendingMarker);
+        } else {
+            const p1 = measurementState.pendingPoint.clone();
+            const p2 = hit.point.clone();
+            clearPendingPoint();
+            addDistanceMeasurement(p1, p2);
+        }
+    } else if (measurementState.mode === 'component') {
+        addComponentMeasurement(hit.object);
+    }
+});
+
+// Wire up measurement UI controls
+const measureModeSelect = document.getElementById('measure-mode');
+const btnEraseLast = document.getElementById('measure-erase-last');
+const btnEraseAll = document.getElementById('measure-erase-all');
+const btnExportImg = document.getElementById('measure-export-img');
+
+if (measureModeSelect) {
+    measureModeSelect.addEventListener('change', (e) => {
+        const value = e.target.value;
+        measurementState.mode = value;
+        if (measurementState.mode !== 'distance') {
+            clearPendingPoint();
+        }
+    });
+}
+
+if (btnEraseLast) {
+    btnEraseLast.addEventListener('click', () => {
+        eraseLastMeasurement();
+    });
+}
+
+if (btnEraseAll) {
+    btnEraseAll.addEventListener('click', () => {
+        eraseAllMeasurements();
+    });
+}
+
+if (btnExportImg) {
+    btnExportImg.addEventListener('click', () => {
+        // Ensure the latest frame is rendered
+        renderer.render(scene, camera);
+        renderer.domElement.toBlob((blob) => {
+            if (!blob) return;
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'cassette-measurements.png';
+            link.click();
+            // Revoke after a delay to allow download
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        }, 'image/png');
+    });
+}
