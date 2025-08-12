@@ -91,7 +91,8 @@ const materials = {
     chip: new THREE.MeshStandardMaterial({ color: 0x1a202c, name: 'Microchip' }),
     needle: new THREE.MeshStandardMaterial({ color: 0xf6ad55, name: 'Needle/Port' }),
     slider: new THREE.MeshStandardMaterial({ color: 0x38a169, name: 'Sliding Track' }),
-    cap: new THREE.MeshStandardMaterial({ color: 0x3182ce, name: 'Top Cap' })
+    cap: new THREE.MeshStandardMaterial({ color: 0x3182ce, name: 'Top Cap' }),
+    oRing: new THREE.MeshStandardMaterial({ color: 0xff3b30, name: 'O-Ring', roughness: 0.6, metalness: 0.0 })
 };
 
 // --- GEOMETRY & MESH CREATION ---
@@ -446,10 +447,29 @@ function createSliderAssembly(isFlipped) {
 
     // CORRECTED: Needle shaft length and positioning to match FreeCAD
     const needleShaftLength = 2.0; // From FreeCAD measurements
-    const needleShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, needleShaftLength, 16), materials.needle);
+    const needleOuterRadius = 0.20; // existing needle radius
+    const needleShaft = new THREE.Mesh(new THREE.CylinderGeometry(needleOuterRadius, needleOuterRadius, needleShaftLength, 32), materials.needle);
     needleShaft.rotation.z = Math.PI / 2;
     needleShaft.position.x = -(needleShaftLength / 2);
     needleAssembly.add(needleShaft);
+
+    // O-Ring geometry sized to seal against chip port without obstructing insertion
+    // Assumptions:
+    // - Chip port throat width ~0.4mm (half-width 0.2), so sealing diameter ~0.4mm
+    // - O-ring tube (cross-section) radius chosen small to avoid excessive friction
+    const oRingTorusRadius = needleOuterRadius + 0.06;   // ring centerline radius from shaft center (slight clearance)
+    const oRingTubeRadius = 0.05;                        // rubber cross-section radius
+    const oRingGeometry = new THREE.TorusGeometry(oRingTorusRadius, oRingTubeRadius, 16, 48);
+    const oRing = new THREE.Mesh(oRingGeometry, materials.oRing);
+    // Align torus normal with needle axis (X). Default torus normal is +Z.
+    oRing.rotation.y = Math.PI / 2;
+    oRing.rotation.z = 0;
+    // Place O-ring at the slider face/needle interface
+    // In this assembly, the cradle (width along X) has its slider face at x = -cradleWidth/2 in needleAssembly space
+    const sliderFaceX = -0.6;
+    const faceClearance = 0.005; // avoid z-fighting with face
+    oRing.position.set(sliderFaceX + oRingTubeRadius + faceClearance, 0, 0);
+    needleAssembly.add(oRing);
 
     // CORRECTED: Luer port assembly positioned to be fully encased within cradle
     const luerPortGroup = new THREE.Group();
